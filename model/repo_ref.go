@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"github.com/mongodb/grip"
 
 	"github.com/evergreen-ci/evergreen"
 	"github.com/evergreen-ci/evergreen/db"
@@ -145,6 +146,41 @@ func (r *RepoRef) AddPermissions(creator *user.DBUser) error {
 			return errors.Wrapf(err, "error adding role '%s' to user '%s'", newRole.ID, creator.Id)
 		}
 	}
+
+	// Create view role for project branch admins
+	newViewRole := gimlet.Role{
+		ID:          GetViewRepoRole(r.Id),
+		Scope:       newScope.ID,
+		Permissions: viewPermissions,
+	}
+	if creator != nil {
+		newViewRole.Owners = []string{creator.Id}
+	}
+	if err := rm.UpdateRole(newViewRole); err != nil {
+		return errors.Wrapf(err, "error adding view role for repo project '%s'", r.Id)
+	}
+
+	return nil
+}
+
+// Give admins of a project branch permission to view repo ref settings
+func addViewPermissionsToBranchAdmins(repoRefID string, admins []string) error {
+	catcher := grip.NewBasicCatcher()
+	viewRole := GetViewRepoRole(repoRefID)
+	for _, admin := range admins {
+		newViewer, err := user.FindOneById(admin)
+		if err != nil {
+			catcher.Wrapf(err, "error trying to find user '%s'", admin)
+			continue
+		}
+		if newViewer == nil {
+			catcher.Add(errors.Errorf("user '%s' cannot be given view permission because they do not exist", admin))
+			continue
+		}
+		if err = newViewer.AddRole(viewRole); err != nil {
+			catcher.Wrapf(err, "error adding role '%s' to user '%s'", viewRole, admin)
+		}
+	}
 	return nil
 }
 
@@ -164,4 +200,8 @@ func GetRepoScope(repoId string) string {
 
 func GetRepoRole(repoId string) string {
 	return fmt.Sprintf("admin_repo_%s", repoId)
+}
+
+func GetViewRepoRole(repoId string) string {
+	return fmt.Sprintf("view_repo_%s", repoId)
 }

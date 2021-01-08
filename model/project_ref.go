@@ -255,6 +255,10 @@ var adminPermissions = gimlet.Permissions{
 	evergreen.PermissionLogs:            evergreen.LogsView.Value,
 }
 
+var viewPermissions = gimlet.Permissions{
+	evergreen.PermissionProjectSettings: evergreen.ProjectSettingsView.Value,
+}
+
 func (projectRef *ProjectRef) Insert() error {
 	return db.Insert(ProjectRefCollection, projectRef)
 }
@@ -284,7 +288,14 @@ func (p *ProjectRef) AddToRepoScope(user *user.DBUser) error {
 				Enabled: true,
 			}}
 			// creates scope and give user admin access to repo
-			return errors.Wrapf(repoRef.Add(user), "problem adding new repo ref for '%s/%s'", p.Owner, p.Repo)
+			if err = repoRef.Add(user); err != nil {
+				return errors.Wrapf(err, "problem adding new repo repo ref for '%s/%s'", p.Owner, p.Repo)
+			}
+			return errors.Wrapf(
+				addViewPermissionsToBranchAdmins(repoRef.Id, p.Admins),
+				"problem giving branch admins of project '%s' view permissions",
+				p.Id,
+			)
 		}
 		p.RepoRefId = repoRef.Id
 	}
@@ -298,6 +309,9 @@ func (p *ProjectRef) AddToRepoScope(user *user.DBUser) error {
 		if err := addAdminToRepo(p.RepoRefId, user.Username()); err != nil {
 			return errors.Wrapf(err, "error adding user as repo admin")
 		}
+	}
+	if err := addViewPermissionsToBranchAdmins(p.RepoRefId, p.Admins); err != nil {
+		return errors.Wrapf(err, "error giving project '%s' admins view permission for repo '%s'", p.Id, p.RepoRefId)
 	}
 	return errors.Wrapf(rm.AddResourceToScope(GetRepoScope(p.RepoRefId), p.Id), "error adding resource to repo '%s' scope", p.RepoRefId)
 }
