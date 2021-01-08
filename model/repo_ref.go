@@ -181,7 +181,7 @@ func addViewPermissionsToBranchAdmins(repoRefID string, admins []string) error {
 			catcher.Wrapf(err, "error adding role '%s' to user '%s'", viewRole, admin)
 		}
 	}
-	return nil
+	return catcher.Resolve()
 }
 
 func addAdminToRepo(repoId, admin string) error {
